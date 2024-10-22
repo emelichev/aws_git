@@ -1,0 +1,78 @@
+#-------------------------------------------
+# GitLab Ci/CD Pipeline Docker to AWS Lambda
+#
+# Created by Denis Astahov 2024
+#-------------------------------------------
+
+stages:
+    - stage_validate
+    - stage_build_push
+    - stage_deploy_dev
+    - stage_deploy_prd    
+    - stage_finish
+
+variables:
+    ECR_REPOSITORY : amd64/lambdaapi
+    AWS_ACCOUNT_ID : 827611452653
+    AWS_REGION     : us-east-2
+    LAMBDA_DEV_NAME: lambda-api-dev
+    LAMBDA_PRD_NAME: lambda-api-prd
+
+image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest
+
+job_validate:
+    stage: stage_validate
+    script:
+        - echo "---VALIDATE TOOLS---"
+        - docker --version
+        - aws --version
+        - aws sts get-caller-identity
+
+job_build_push:
+    stage: stage_build_push
+    variables:
+        DOCKER_HOST: tcp://docker:2375
+    services:
+        - docker:dind    
+    before_script:
+        - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+    script:
+        - echo "---BUILD and PUSH START---"
+        - docker build --platform linux/amd64 -t gitlabdockerbuild:latest .
+        - docker tag gitlabdockerbuild:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$CI_COMMIT_SHORT_SHA
+        - docker tag gitlabdockerbuild:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$CI_COMMIT_BRANCH-latest
+        - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$CI_COMMIT_SHORT_SHA
+        - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$CI_COMMIT_BRANCH-latest
+        - echo "---BUILD and PUSH COMPLETED---"      
+
+   
+job_deploy_to_dev:
+    stage: stage_deploy_dev
+    rules:
+        - if: $CI_COMMIT_BRANCH == "dev"
+    script:
+        - echo "---Deploy to DEV Started---"
+        - |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_DEV_NAME \
+            --image-uri $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$CI_COMMIT_BRANCH-latest \
+            --publish        
+        - echo "---Deploy to DEV Completed---"   
+
+job_deploy_to_prd:
+    stage: stage_deploy_prd
+    rules:
+        - if: $CI_COMMIT_BRANCH == "main"    
+    script:
+        - echo "---Deploy to PROD Started---"
+        - |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_PRD_NAME \
+            --image-uri $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$CI_COMMIT_BRANCH-latest \
+            --publish           
+        - echo "---Deploy to PROD Completed---"   
+
+finish_job:
+    stage : stage_finish
+    script:
+        - echo "---GitLab CI/CD Completed Successfully---"        
