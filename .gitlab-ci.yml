@@ -30,6 +30,10 @@ job_validate:
 
 job_build_push:
     stage: stage_build_push
+    variables:
+        DOCKER_HOST: tcp://docker:2375
+    services:
+        - docker:dind    
     before_script:
         - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
     script:
