@@ -17,7 +17,7 @@ def lambda_handler(event, context):
         "statusCode": 200,
         "headers"   : { "Content-Type": "application/json" },
         "body": json.dumps({
-            "APIVersion": "v1.0",
+            "APIVersion": "v1.12345+",
             "Message"   : "AWS Lambda with Docker and Python!",
             "Developer" : "Denis Astahov",
             "Python"    : str(sys.version),
